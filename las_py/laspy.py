@@ -1,6 +1,7 @@
+from logging import ERROR
+from os import error
 import re
 from types import SimpleNamespace
-
 
 class Laspy:
     def __init__(self, file):
@@ -16,13 +17,30 @@ class Laspy:
         self.param = read_param(self.__secret.param_sect)
         self.row_count = len(self.__get_data())
         self.column_count = len(self.__get_data()[0])
-        self.version, self.wrap, *self.other_infos = self.__get_version()
+        self.version, self.wrap, *self.other_info = self.__get_version()
 
     def __str__(self):
         if(len(self.header) > 0):
             return 'Valid'
         else:
             return 'Invalid'
+
+    def well_obj_keys(self):
+        try:
+            return list(self.well.__dict__.keys())
+        except FileExistsError:
+            return 'No keys!'
+    def well_header_and_descr(self):
+        try:
+            wellDescription = []
+            wellDescrValue = []
+            for var in list(self.well.__dict__.items()):
+                wellDescription.append(var[1].descr)
+                wellDescrValue.append(var[1].value)
+            return [wellDescrValue,wellDescription]
+        except IndexError:
+            return 'error'
+    
 
     def __repr__(self):
         if(len(self.header) > 0):
@@ -74,12 +92,24 @@ class Laspy:
 
     def column(self, str):
         obj = {}
-        try:
-            for index, val in enumerate(self.header):
-                obj[val] = [x[index] for x in self.data]
-            return obj[str]
-        except KeyError:
-            return 'Column with title {} doesn\'t exist'.format(str)
+        if self.wrap == 'NO':
+            try:
+                for index, val in enumerate(self.header):
+                    obj[val] = [x[index] for x in self.data]
+                return obj[str]
+            except KeyError:
+                return 'Column with title {} doesn\'t exist'.format(str)
+            except IndexError:
+                return 'Index at {} is out of the border'.format(index)
+        elif self.wrap == 'YES':
+            try:
+                for index, val in enumerate(self.header):
+                    if str == val:
+                        obj[val] = [x[index] for x in self.data]
+                    pass
+                return obj[str]
+            except KeyError:
+                return 'Column with title {} doesn\'t exist'.format(str)        
 
     def column_stripped(self, str):
         obj = {}
@@ -124,12 +154,13 @@ class LasContent:
         self.well_sect = self.__get_part('W')
         self.curve_sect = self.__get_part('C')
         self.data_sect = self.__get_data_sect()
-        self.param_sect = self.__get_part('P')
+        self.param_sect = self.__get_part('P') 
         self.other_sect = self.__get_part('O')
         self.version_sect = self.__get_part('V')
 
     def __get_data_sect(self):
-        return re.split(self.__pattern('A'), self.__str)[1]
+        text = re.split(self.__pattern('A'), self.__str)[1]
+        return LasContent.__remove_comment(text.split('~')[0])
 
     def __get_part(self, letter):
         try:
@@ -171,15 +202,18 @@ def _convert_to_value(s):
     return value
 
 
+
 def read_param(str_blob):
-    val = str_blob.splitlines()
-    con = {}
-    for i in range(len(val)):
-        items = from_line(val[i])
-        item_key = list(items.keys())[0]
-        item_values = list(items.values())[0]
-        con[item_key] = item_values
-    return NestedNamespace(con)
+
+    if type(str_blob) is not bool: 
+        val = str_blob.splitlines()
+        con = {}
+        for i in range(len(val)):
+            items = from_line(val[i])
+            item_key = list(items.keys())[0]
+            item_values = list(items.values())[0]
+            con[item_key] = item_values
+        return NestedNamespace(con)
 
 
 def from_line(res):
